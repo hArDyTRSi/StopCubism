@@ -13,7 +13,7 @@ public float rotationAngle;
 public float shootSpeed = 0.5f;
 
 public Transform[] turretPositions;
-public GameObject prefabShot;
+public GameObject[] prefabShots;
 public AudioClip shot;
 public AudioClip death;
 
@@ -31,7 +31,9 @@ private float _zoomTimer = 0.0f;
 
 private GameObject _player;
 private GameObject _pauseMenu;
+private Transform _camera;
 private TextMesh _scoreBoard;
+private TextMesh _hiScoreBoard;
 private TextMesh _startResume;
 private GenerateLevel _genLevel;
 //####################################################################################################
@@ -39,9 +41,12 @@ private GenerateLevel _genLevel;
 void Start()
 {
 	_screenHeight = Screen.height / 2;
-	_cameraZ = -Camera.main.transform.position.z / 2.0f + 0.5f;
+//	_cameraZ = -Camera.main.transform.position.z / 2.0f + 0.5f;
+	_cameraZ = -Camera.main.transform.position.z / 2.0f;
 	_player = GameObject.FindGameObjectWithTag("Player");
+	_camera = Camera.main.transform;
 	_scoreBoard = GameObject.FindWithTag("Scoreboard").GetComponent<TextMesh>();
+	_hiScoreBoard = GameObject.FindWithTag("HiScoreboard").GetComponent<TextMesh>();
 	_pauseMenu = GameObject.FindWithTag("UpgradeMenu");
 	_pauseMenu.SetActive(true);
 	_startResume = _pauseMenu.GetComponentInChildren<TextMesh>();
@@ -96,14 +101,24 @@ void OnTriggerEnter()
 
 void MoveShip()
 {
+	// move ship forward towards enemies!
 	if(_positioned)
 	{
 		_player.transform.position += Vector3.right * forwardSpeed * Time.fixedDeltaTime;
 	}
+
+	// constantly roll ship (for Gravitation!)
+	transform.rotation = Quaternion.Euler(timer * 50.0f, 0.0f, 0.0f);
+
 }
 
 void ControlShip()
 {
+	if(timer < 0.5f)
+	{
+		return;
+	}
+
 //	if(Input.touchCount == 1)	// should work with GetMouseButton, need to test!
 	if(Input.GetMouseButton(0))
 	{
@@ -113,14 +128,13 @@ void ControlShip()
 		upDown /= _screenHeight;
 		
 		// reposition Player on Y-Axis
-		Vector3 newPosition = new Vector3(
+		transform.position = new Vector3(
 			transform.position.x,
 			Mathf.Clamp(transform.position.y + upDown * upDownSpeed * Time.deltaTime, -_cameraZ, _cameraZ),
 			transform.position.z);
-		transform.position = newPosition;
 		
 		// rotate Player
-		transform.rotation = Quaternion.Euler((transform.position.y / _cameraZ) * rotationAngle, 0.0f, 0.0f);
+//		transform.rotation = Quaternion.Euler((transform.position.y / _cameraZ) * rotationAngle, 0.0f, 0.0f);
 	}
 }
 
@@ -130,30 +144,40 @@ void Shoot()
 	{
 		return;
 	}
-
-	_shootTimer -= Time.deltaTime;
-//	if(Input.GetButtonDown("Fire1"))
+	
+	//	if(Input.GetButtonDown("Fire1"))
 	//TODO: Put Firebutton bottomRightCorner for Tablets, use key (Right mousebutton) for windows/web!
-	if(_shootTimer < 0.0f)
+	if(Input.GetMouseButton(1))
 	{
-		_shootTimer = shootSpeed;
-
-		for(int p=0; p<activeTurrets; p++)
+		_shootTimer -= Time.deltaTime;
+		if(_shootTimer < 0.0f)
 		{
-			Instantiate(prefabShot, turretPositions[p].position + Vector3.right * 0.5f, Quaternion.identity);
+			_shootTimer = shootSpeed;
+
+			for(int p=0; p<activeTurrets; p++)
+			{
+				int col = p == 0 ? 0 : p > 4 ? 2 : 1;
+				Instantiate(prefabShots[col], turretPositions[p].position + Vector3.right * 0.5f, Quaternion.identity);
+			}
+			audio.PlayOneShot(shot);
 		}
-		audio.PlayOneShot(shot);
+	}
+	if(Input.GetMouseButtonUp(1))
+	{
+		_shootTimer = 0.0f;
 	}
 }
 
 void CheckPause()
 {
-	if(Input.GetKeyDown(KeyCode.Space))
+//	if(Input.GetKeyDown(KeyCode.Space))
+	if(_positioned && Input.GetKeyDown(KeyCode.Space))
 	{
-		if(timer < 0.1f)
-		{
-			return;
-		}
+//		if(!_positioned)//timer < 0.1f)
+//		if(timer < 0.1f)
+//		{
+//			return;
+//		}
 		if(paused)
 		{
 			Time.timeScale = 1;
@@ -174,25 +198,58 @@ void CheckPause()
 		
 }
 
-// ############ COROUTINES ############
+// ############ COROUTINES #############################################################################
 
 IEnumerator MoveOntoScreen()
 {
-//		transform.position -= Vector3.right * 5.0f;
-	transform.position = new Vector3(transform.position.x - 5.0f, transform.position.y, transform.position.z);
-	Debug.Log("start: " + _startPosition.x);
+	transform.position = new Vector3(_startPosition.x - 5.0f, _startPosition.y, _startPosition.z);
 
-	while(transform.position.x < _startPosition.x)
+	Vector3 cameraDestination = _camera.position;
+
+	_camera.position -= new Vector3(15.0f, 0.0f, -10.0f);
+
+	while(transform.position.x != _startPosition.x ||
+			_camera.position.x != cameraDestination.x ||
+			_camera.position.z != cameraDestination.z)
 	{
-		Debug.Log("actual x: " + transform.position.x);
-		Debug.Log("while: " + _startPosition.x);
-		transform.position += Vector3.right * Time.deltaTime * 3.0f;
-	
+		// ship
+		if(transform.position.x > _startPosition.x)
+		{
+			transform.position = new Vector3(_startPosition.x, transform.position.y, transform.position.z);
+		}
+		else
+		{
+			//TODO: move these to fixedUpdate with a switch -> if(switch) move
+			transform.position += Vector3.right * Time.deltaTime * 3.0f;
+		}
+
+		// camera X
+		if(_camera.position.x > cameraDestination.x)
+		{
+			_camera.position = new Vector3(cameraDestination.x, _camera.position.y, _camera.position.z);
+		}
+		else
+		{
+			//TODO: move these to fixedUpdate with a switch -> if(switch) move
+			_camera.position += Vector3.right * Time.deltaTime * 9.0f;
+		}
+
+
+		// camera Z
+		if(_camera.position.z < cameraDestination.z)
+		{
+			_camera.position = new Vector3(_camera.position.x, _camera.position.y, cameraDestination.z);
+		}
+		else
+		{
+			//TODO: move these to fixedUpdate with a switch -> if(switch) move
+			_camera.position -= Vector3.forward * Time.deltaTime * 6.0f;
+		}
+
 		yield return new WaitForEndOfFrame();
 	}
 
-	transform.position = new Vector3(_startPosition.x, transform.position.y, transform.position.z);
-	Debug.Log("end" + _startPosition.x);
+	_camera.position = new Vector3(cameraDestination.x, _camera.position.y, cameraDestination.z);
 
 	_positioned = true;
 }
@@ -206,10 +263,11 @@ public IEnumerator Die()
 	// Check if new Highscore!
 	CheckHighScore();
 
-	//TODO: let ship burst away, part for part (lotsa cubes!)
+	//TODO: let ship burst away, move single cubes of ship kinda randomly
 	//HACK: remove once implemented upper todo
 	while(_zoomTimer < 3.0f)
 	{
+		//TODO: move these to fixedUpdate with a switch -> if(switch) move
 		transform.position = new Vector3(transform.position.x + _zoomTimer * 0.1f, transform.position.y, transform.position.z + _zoomTimer * 0.1f);
 		transform.Rotate(_zoomTimer * 5.0f, 0.0f, 0.0f);
 		_zoomTimer += Time.deltaTime;
@@ -227,8 +285,9 @@ public IEnumerator Die()
 	_positioned = false;
 
 	// reset Player - Position
-	_player.transform.position = _playerStartPosition;
-	_player.transform.position = _player.transform.position - Vector3.up * 100.0f;
+//	_player.transform.position = _playerStartPosition;
+//	_player.transform.position = _player.transform.position - Vector3.up * 100.0f;
+	_player.transform.position = _playerStartPosition - Vector3.up * 100.0f;
 	transform.position = _startPosition;
 	transform.rotation = Quaternion.identity;
 
@@ -259,10 +318,13 @@ void CheckHighScore()
 	{
 		PlayerPrefs.SetInt("HiScore", _score);
 		PlayerPrefs.Save();
+
+		_hiScoreBoard.text = "HI: " + _score.ToString();
 	}
 }
 
 //####################################################################################################
+//##### PUBLIC Functions
 
 public void AddScore(int score)
 {
